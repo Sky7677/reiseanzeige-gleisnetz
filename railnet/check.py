@@ -31,6 +31,19 @@ CHECKS = [
 MAX_DETOUR = 1.8   # Gleisweg höchstens so viel länger als die Luftlinie
 
 
+def _key(name: str) -> str:
+    s = name.lower().replace("hauptbahnhof", "hbf")
+    return "".join(ch for ch in s if ch.isalnum())
+
+
+def _unique(hits: list | None):
+    """Ein Treffer über den Namen – nur, wenn alle am selben Ort liegen."""
+    if not hits:
+        return None
+    first = (hits[0][3], hits[0][4])
+    return hits[0] if all(dist_m(first, (h[3], h[4])) < 1500 for h in hits) else None
+
+
 def _similar(stations: list, name: str, limit: int = 6) -> list:
     """Einträge, deren Name mit dem Ort beginnt und Bahnhof/Hbf enthält – zur Fehlersuche."""
     city = name.split()[0].lower()
@@ -44,6 +57,10 @@ def run(path: str, checks: list = CHECKS) -> tuple[str, int, int]:
     net = RailNet.load(path)
     load_s = time.time() - t0
     by_eva = {s[1]: s for s in net.stations if s[1]}
+    by_name: dict[str, list] = {}
+    for s in net.stations:
+        if s[5] == "rail":
+            by_name.setdefault(_key(s[0]), []).append(s)
     lines = [f"Gleisnetz `{path}` – geladen in {load_s:.1f} s", ""]
 
     head = net.header
@@ -62,11 +79,12 @@ def run(path: str, checks: list = CHECKS) -> tuple[str, int, int]:
     ok = 0
     hints: list[str] = []
     for a, b, mode, label in checks:
-        sa, sb = by_eva.get(a), by_eva.get(b)
+        names = [n.strip() for n in label.split("→")]
+        sa = by_eva.get(a) or _unique(by_name.get(_key(names[0])))
+        sb = by_eva.get(b) or _unique(by_name.get(_key(names[-1])))
         if not sa or not sb:
             missing = ", ".join(x for x, s in ((a, sa), (b, sb)) if not s)
             lines.append(f"| {label} | {mode} | – | – | – | – | Bahnhof fehlt ({missing}) |")
-            names = [n.strip() for n in label.split("→")]
             for eva, s, name in ((a, sa, names[0]), (b, sb, names[-1])):
                 if not s:
                     hints.append(f"- {eva} ({name}), Einträge gleichen Orts: " + "; ".join(
@@ -85,7 +103,8 @@ def run(path: str, checks: list = CHECKS) -> tuple[str, int, int]:
         good = 1.0 <= factor <= MAX_DETOUR
         ok += good
         lines.append(f"| {label} | {mode} | {crow:.0f} km | {length:.0f} km | {factor:.2f} | {secs:.1f} s | {'ok' if good else 'unplausibel'} |")
-    lines += ["", f"{ok} von {len(checks)} Verbindungen plausibel."]
+    with_number = sum(1 for a, b, *_ in checks for x in (a, b) if x in by_eva)
+    lines += ["", f"{ok} von {len(checks)} Verbindungen plausibel; {with_number} von {2 * len(checks)} Bahnhöfen über ihre Nummer gefunden, die übrigen über den Namen."]
     if hints:
         lines += ["", "Fehlende Bahnhöfe:", *dict.fromkeys(hints)]
     return "\n".join(lines), ok, len(checks)

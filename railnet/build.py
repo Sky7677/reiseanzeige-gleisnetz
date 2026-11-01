@@ -10,8 +10,12 @@ Was hineinkommt:
     Weichenverbindungen (service = crossover) bleiben, sonst kommt kein Zug von
     einem Gleis aufs Nachbargleis. Güterstrecken bleiben mit eigener Klasse, das
     Routing verteuert sie nur (bei Umleitungen fahren auch Personenzüge dort).
-  * Bahnhöfe und Haltestellen mit Name, Lage, Bahnhofsnummer (uic_ref) und
-    DS100-Kürzel (railway:ref).
+  * Bahnhöfe und Haltestellen mit Name, Lage, Bahnhofsnummer und DS100-Kürzel
+    (railway:ref). Die Nummer steht in OSM als uic_ref, bei großen Bahnhöfen am
+    Bahnhofspunkt oft die internationale UIC-Nummer und die DB-Nummer (EVA, wie
+    sie die Timetables-API nutzt) nur an den Haltepositionen am Gleis. Daher:
+    Nummern aus beiden Quellen; für Nummern nur an Haltepositionen deren
+    Mittelpunkt als Lage.
   * Linienverläufe von Tram, U-Bahn und Stadt-/S-Bahn (route = tram, subway,
     light_rail) mit Haltestellen. Für diese Linien kennt die Reiseanzeige keine
     Zwischenhalte, der Weg ergibt sich also nicht aus dem kürzesten Pfad.
@@ -79,6 +83,27 @@ def station_kind(tags) -> str | None:
     return None
 
 
+def numbers(tags) -> list[str]:
+    """Bahnhofsnummern eines Objekts (uic_ref, ref:IBNR; auch „a;b“)."""
+    out: list[str] = []
+    for key in ("uic_ref", "ref:IBNR"):
+        for v in (tags.get(key) or "").split(";"):
+            v = v.strip()
+            if v.isdigit() and v not in out:
+                out.append(v)
+    return out
+
+
+def stop_kind(tags) -> str:
+    if tags.get("subway") == "yes":
+        return "subway"
+    if tags.get("tram") == "yes" or tags.get("railway") == "tram_stop":
+        return "tram"
+    if tags.get("light_rail") == "yes" and tags.get("train") != "yes":
+        return "light_rail"
+    return "rail"
+
+
 def end_bearings(points: list[tuple[float, float]]) -> tuple[float, float]:
     """Richtung beim Verlassen des ersten und beim Erreichen des letzten Punkts,
     jeweils über etwa BEARING_M gemessen (kleine Knicke direkt an der Weiche
@@ -110,6 +135,7 @@ class Collector(osmium.SimpleHandler):
         self.stops: dict[int, tuple[str, float, float]] = {}      # Haltepositionen, Haltestellen-Knoten
         self.platforms: dict[int, tuple[str, float, float]] = {}  # Bahnsteige als Wege (Mittelpunkt)
         self.relations: list[tuple[dict, list[tuple[str, int, str]]]] = []
+        self.stop_numbers: dict[str, list] = defaultdict(list)    # Nummer → Haltepositionen
 
     def node(self, n) -> None:
         tags = n.tags
@@ -119,10 +145,13 @@ class Collector(osmium.SimpleHandler):
         if not name:
             return
         kind = station_kind(tags)
+        lat, lon = n.location.lat, n.location.lon
         if kind:
-            eva = tags.get("uic_ref") or tags.get("ref:IBNR")
-            eva = eva if eva and eva.isdigit() else None
-            self.stations.append([name, eva, tags.get("railway:ref"), round(n.location.lat, 6), round(n.location.lon, 6), kind])
+            for eva in numbers(tags) or [None]:
+                self.stations.append([name, eva, tags.get("railway:ref"), round(lat, 6), round(lon, 6), kind])
+        elif tags.get("railway") == "stop" or tags.get("public_transport") == "stop_position":
+            for eva in numbers(tags):
+                self.stop_numbers[eva].append((tags.get("uic_name") or name, lat, lon, stop_kind(tags), tags.get("railway:ref")))
         if kind or tags.get("public_transport") in ("stop_position", "platform") or tags.get("railway") == "stop":
             self.stops[n.id] = (name, n.location.lat, n.location.lon)
 
@@ -301,6 +330,14 @@ def build(input_path: str, output_path: str, source: str = "") -> dict:
                        "shape": [[round(p[0], 6), round(p[1], 6)] for p in shape], "stops": stop_list})
     routes.sort(key=lambda r: (r.get("route", ""), r.get("ref", ""), r.get("name", "")))
 
+    known = {s[1] for s in c.stations if s[1]}
+    for eva, stops in c.stop_numbers.items():
+        if eva in known:
+            continue
+        name, _lat, _lon, kind, ds100 = stops[0]
+        lat = sum(s[1] for s in stops) / len(stops)
+        lon = sum(s[2] for s in stops) / len(stops)
+        c.stations.append([name, eva, ds100, round(lat, 6), round(lon, 6), kind])
     stations = sorted({tuple(s) for s in c.stations}, key=lambda s: (s[0], s[1] or "", s[3], s[4]))
     blocks["stations"] = ("json", [list(s) for s in stations])
     blocks["routes"] = ("json", routes)

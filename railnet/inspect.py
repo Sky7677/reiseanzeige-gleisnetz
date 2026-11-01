@@ -26,7 +26,9 @@ class Finder(osmium.SimpleHandler):
         values = {v.strip() for k in NUMBER_KEYS for v in tags.get(k, "").split(";")}
         if (self.name and self.name.search(tags.get("name", ""))) or (values & self.numbers):
             if any(k in tags for k in ("railway", "public_transport", "uic_ref", "type")):
-                self.hits.append(f"{kind}/{obj.id} " + " | ".join(f"{k}={v}" for k, v in sorted(tags.items())))
+                keep = [k for k in ("name", "uic_name", "railway", "public_transport", "station", "uic_ref", "ref:IBNR",
+                                    "railway:ref", "train", "light_rail", "subway", "tram", "type") if k in tags]
+                self.hits.append(f"{kind}/{obj.id} " + " | ".join(f"{k}={tags[k]}" for k in keep))
 
     def node(self, n) -> None:
         self._check("node", n)

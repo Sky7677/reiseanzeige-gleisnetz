@@ -219,3 +219,24 @@ def test_dateiformat(tmp_path):
     assert all(off % 8 == 0 for _typ, _n, off in head["blocks"].values())
     with pytest.raises(ValueError):
         ff.read(b"XXXX" + data[4:])
+
+
+def test_db_nummer_an_haltepositionen(tmp_path):
+    """Großer Bahnhof: am Bahnhofspunkt die UIC-Nummer, die DB-Nummer nur an den
+    Haltepositionen am Gleis (so in OSM etwa bei Augsburg Hbf)."""
+    o = Osm()
+    o.way([(0, 0), (1, 0), (2, 0)], railway="rail", usage="main")
+    o.n(1, 0.15, railway="station", name="Augsburg Hauptbahnhof", uic_ref="8002140", railway__ref="MA")
+    o.n(0.9, 0, railway="stop", public_transport="stop_position", name="Augsburg Hauptbahnhof",
+        uic_name="Augsburg Hbf", uic_ref="8000013", railway__ref="MA", train="yes")
+    o.n(1.1, 0, railway="stop", public_transport="stop_position", name="Augsburg Hauptbahnhof", uic_ref="8000013", train="yes")
+    o.n(1.5, 0, railway="stop", public_transport="stop_position", name="Tief", uic_ref="8098263;8098264", subway="yes")
+    o.n(1.8, 0.1, railway="station", name="Doppelt", uic_ref="8000001; 8000002")
+    net = make(tmp_path, o)
+    by_eva = {s[1]: s for s in net.stations}
+    assert by_eva["8002140"][0] == "Augsburg Hauptbahnhof"
+    hbf = by_eva["8000013"]
+    assert hbf[0] == "Augsburg Hbf" and hbf[2] == "MA" and hbf[5] == "rail"
+    assert dist_m((hbf[3], hbf[4]), ll(1, 0)) < 1, "Mittelpunkt der Haltepositionen, am Gleis"
+    assert by_eva["8098263"][5] == "subway" and "8098264" in by_eva
+    assert {"8000001", "8000002"} <= set(by_eva)
