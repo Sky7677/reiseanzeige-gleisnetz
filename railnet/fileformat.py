@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import json
 import struct
+import sys
 from array import array
 
 MAGIC = b"RLNET\x00\x01\x00"
@@ -103,17 +104,29 @@ def write(path: str, header: dict, blocks: dict[str, tuple[str, object]]) -> Non
 
 
 def read(data: bytes) -> tuple[dict, dict[str, object]]:
-    """Datei-Inhalt → (Kopf, Blöcke). Zahlenblöcke als array, JSON-Blöcke als Objekt."""
+    """Datei-Inhalt → (Kopf, Blöcke). JSON-Blöcke als Objekt, Zahlenblöcke als
+    Sequenz mit Index-Zugriff: auf Little-Endian-Rechnern (praktisch alle) als
+    memoryview direkt auf data – ohne Kopie, das spart in Home Assistant die
+    Hälfte des Speichers –, sonst als umgedrehtes array."""
     if data[:8] != MAGIC:
         raise ValueError("Keine Gleisnetz-Datei (Kennung fehlt) oder unbekannte Version")
     (length,) = struct.unpack_from("<I", data, 8)
-    head = json.loads(data[12:12 + length].decode("utf-8"))
+    head = json.loads(bytes(data[12:12 + length]).decode("utf-8"))
+    view = memoryview(data)
     blocks: dict[str, object] = {}
     for name, (typ, count, offset) in head["blocks"].items():
         if typ == "json":
-            blocks[name] = json.loads(data[offset:offset + count].decode("utf-8"))
+            blocks[name] = json.loads(bytes(view[offset:offset + count]).decode("utf-8"))
+            continue
+        size = array(typ).itemsize
+        raw = view[offset:offset + count * size]
+        if len(raw) != count * size:
+            raise ValueError(f"Gleisnetz-Datei unvollständig (Block {name})")
+        if sys.byteorder == "little":
+            blocks[name] = raw.cast(typ)
         else:
             arr = array(typ)
-            arr.frombytes(data[offset:offset + count * arr.itemsize])
+            arr.frombytes(raw)
+            arr.byteswap()
             blocks[name] = arr
     return head, blocks
