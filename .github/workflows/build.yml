@@ -78,6 +78,13 @@ jobs:
           retention-days: 7
           compression-level: 0
 
+      - name: Große Bahnhöfe in den OSM-Daten (Fehlersuche)
+        if: github.event_name == 'workflow_dispatch' && !inputs.publish
+        run: |
+          python -m railnet.inspect rail.osm.pbf \
+            --name '^(Augsburg|München|Berlin|Hamburg|Köln|Frankfurt \(Main\)|Ulm|Nürnberg)[ -](Hbf|Hauptbahnhof|Altona|Ostbahnhof)' \
+            --number 8000013,8000261,8000170,8000105,8000207,8011160,8010255,8002549,8002553,8000284,8002140,8020347
+
       - name: Gleisnetz bauen
         run: python -m railnet.build rail.osm.pbf gleisnetz-de.bin --source "Geofabrik germany-latest.osm.pbf, Stand $STAND"
 
