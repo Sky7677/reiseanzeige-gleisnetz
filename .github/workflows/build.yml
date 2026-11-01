@@ -1,0 +1,89 @@
+name: Gleisnetz bauen
+
+# Monatlich neu aus OpenStreetMap, von Hand über „Run workflow“ jederzeit.
+on:
+  schedule:
+    - cron: "23 2 4 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: gleisnetz
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      GEOFABRIK: https://download.geofabrik.de/europe/germany-latest.osm.pbf
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - name: Werkzeuge
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q osmium-tool
+          pip install -e ".[test]"
+      - name: Tests
+        run: pytest -q
+
+      - name: Deutschland-Auszug laden (Geofabrik)
+        run: |
+          curl -fsSL --retry 3 -A "reiseanzeige-gleisnetz (+https://github.com/${{ github.repository }})" -o germany.osm.pbf "$GEOFABRIK"
+          curl -fsSL --retry 3 -o germany.osm.pbf.md5 "$GEOFABRIK.md5"
+          echo "$(cut -d' ' -f1 germany.osm.pbf.md5)  germany.osm.pbf" | md5sum -c -
+          STAND=$(osmium fileinfo -j germany.osm.pbf | jq -r '.header.option.osmosis_replication_timestamp // empty')
+          [ -n "$STAND" ] || STAND=$(date -u +%FT%TZ)
+          echo "STAND=$STAND" >> "$GITHUB_ENV"
+          echo "VERSION=${STAND:0:10}" >> "$GITHUB_ENV"
+          ls -la germany.osm.pbf
+
+      - name: Bahnobjekte herausfiltern
+        run: |
+          osmium tags-filter germany.osm.pbf \
+            w/railway=rail,light_rail,subway,tram,narrow_gauge \
+            n/railway=station,halt,tram_stop,stop \
+            n/public_transport=stop_position,station \
+            r/route=light_rail,subway,tram \
+            -o rail.osm.pbf
+          rm germany.osm.pbf
+          ls -la rail.osm.pbf
+
+      - name: Gleisnetz bauen
+        run: python -m railnet.build rail.osm.pbf gleisnetz-de.bin --source "Geofabrik germany-latest.osm.pbf, Stand $STAND"
+
+      - name: Mit echten Verbindungen prüfen
+        run: python -m railnet.check gleisnetz-de.bin --report report.md
+
+      - name: Packen
+        run: python -m railnet.publish gleisnetz-de.bin --version "$VERSION" --out dist
+
+      - name: Veröffentlichen
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="daten-$VERSION"
+          {
+            echo "Gleisnetz Deutschland, Datenstand $STAND."
+            echo
+            echo "**Lizenz der Daten:** © OpenStreetMap-Mitwirkende, verfügbar unter der [Open Database License (ODbL) 1.0](https://opendatacommons.org/licenses/odbl/1-0/). Quelle: Deutschland-Auszug von [Geofabrik](https://download.geofabrik.de/). Erzeugt mit dem Code dieses Repositorys."
+            echo
+            echo "## Prüfung"
+            echo
+            cat report.md
+          } > notes.md
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber
+            gh release edit "$TAG" --notes-file notes.md --latest
+          else
+            gh release create "$TAG" dist/* --title "Gleisnetz $VERSION" --notes-file notes.md --latest
+          fi
+          # Nur die letzten drei Datenstände behalten
+          gh release list --limit 100 --json tagName,createdAt \
+            --jq 'map(select(.tagName | startswith("daten-"))) | sort_by(.createdAt) | reverse | .[3:] | .[].tagName' |
+          while read -r old; do gh release delete "$old" --cleanup-tag --yes; done
