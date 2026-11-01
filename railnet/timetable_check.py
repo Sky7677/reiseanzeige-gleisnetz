@@ -18,10 +18,10 @@ from datetime import timedelta
 
 from .plan import Timetable, line_score
 
-EXAMPLES = [
+EXAMPLES = [   # Namen wie im GTFS (Berlin im VBB-Stil)
     ("Augsburg Hbf", "Nürnberg Hbf", "regional", "RE1"),
-    ("München Hbf", "Berlin Hbf", "longdistance", "ICE"),
-    ("Berlin Südkreuz", "Berlin Westkreuz", "suburban", "S41"),
+    ("München Hbf", "Nürnberg Hbf", "longdistance", "ICE"),
+    ("S Südkreuz Bhf (Berlin)", "S Westkreuz (Berlin)", "suburban", "S41"),
 ]
 
 

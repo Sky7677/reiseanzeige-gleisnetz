@@ -10,6 +10,19 @@ Das Netz wird monatlich per GitHub Actions neu gebaut und als Release veröffent
 - **Bahnhöfe und Haltestellen:** Name, Lage, Bahnhofsnummer (EVA, aus `uic_ref`) und DS100-Kürzel.
 - **Linienverläufe** von Straßenbahn, U-Bahn und Stadtbahn mit ihren Haltestellen. Für diese Linien kennt die Reiseanzeige keine Zwischenhalte, der Weg kommt deshalb aus der Linie selbst.
 
+## Fahrplan
+
+Ein zweiter, täglicher Lauf (`.github/workflows/fahrplan.yml`, **Actions → Fahrplan bauen**) verdichtet die freien GTFS-Feeds von [gtfs.de](https://gtfs.de) zu einer kleinen Datei: alle Züge aus Fern- und Regionalverkehr, dazu Straßenbahn und U-Bahn, jeweils 30 Tage voraus. Fahrten mit gleicher Haltfolge und Fahrzeit bilden ein Muster; je Fahrt bleiben Startminute und Verkehrstage. Busse sind nicht dabei.
+
+Damit kennt die Reiseanzeige die Zwischenhalte eines Zuges schon Tage vor der Fahrt und die von Straßenbahn und U-Bahn überhaupt. Die freien Feeds haben keine Zugnummern; `railnet/plan.py` findet die Fahrt über Einstiegs-Station, Abfahrtsminute, Linie und Ausstieg.
+
+Der Lauf veröffentlicht nur, wenn eine Stichprobe von 300 Fahrten wiedergefunden wird. Feste Adressen (Release `fahrplan`, eine Vorabversion, die täglich ersetzt wird):
+
+```
+https://github.com/Sky7677/reiseanzeige-gleisnetz/releases/download/fahrplan/fahrplan-manifest.json
+https://github.com/Sky7677/reiseanzeige-gleisnetz/releases/download/fahrplan/fahrplan-de.bin.gz
+```
+
 ## Routing
 
 `railnet/router.py` sucht den Weg auf den Gleisen (A* über Kante und Fahrtrichtung):
@@ -18,7 +31,7 @@ Das Netz wird monatlich per GitHub Actions neu gebaut und als Release veröffent
 - An Halten darf er die Richtung wechseln, zum Beispiel im Kopfbahnhof.
 - Jedes Verkehrsmittel fährt nur auf seinen Gleisen: Ein ICE nimmt keine Straßenbahngleise, eine Straßenbahn keine Fernbahn.
 
-Die Integration übernimmt `router.py`, `fileformat.py` und `geo.py` unverändert. Diese Dateien brauchen außer Python nichts.
+Die Integration übernimmt `router.py`, `plan.py`, `fileformat.py` und `geo.py` unverändert. Diese Dateien brauchen außer Python nichts.
 
 ## Datenlauf
 
@@ -55,4 +68,5 @@ python -m railnet.build rail.osm.pbf gleisnetz.bin
 ## Lizenz
 
 - **Code** (dieses Repository): MIT, siehe `LICENSE`.
-- **Daten** (die Dateien in den Releases): © OpenStreetMap-Mitwirkende, verfügbar unter der [Open Database License (ODbL) 1.0](https://opendatacommons.org/licenses/odbl/1-0/). Wer die Daten weitergibt oder daraus eine Datenbank ableitet, muss sie ebenfalls unter der ODbL anbieten. Wer Karten oder Bilder daraus zeigt, nennt „© OpenStreetMap-Mitwirkende“. Näheres unter [openstreetmap.org/copyright](https://www.openstreetmap.org/copyright).
+- **Fahrplan** (Release `fahrplan`): Fahrplandaten DELFI e.V., aufbereitet von gtfs.de, unter [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Wer sie nutzt, nennt die Quelle.
+- **Gleisnetz** (Releases `daten-…`): © OpenStreetMap-Mitwirkende, verfügbar unter der [Open Database License (ODbL) 1.0](https://opendatacommons.org/licenses/odbl/1-0/). Wer die Daten weitergibt oder daraus eine Datenbank ableitet, muss sie ebenfalls unter der ODbL anbieten. Wer Karten oder Bilder daraus zeigt, nennt „© OpenStreetMap-Mitwirkende“. Näheres unter [openstreetmap.org/copyright](https://www.openstreetmap.org/copyright).

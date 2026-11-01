@@ -94,6 +94,8 @@ class Timetable:
              tolerance: int = 1) -> PlanTrip | None:
         """Fahrt ab einer der dep_places zur Minute dep_minute am Tag day (auch nach
         Mitternacht: dann am Vortag mit +1440) bis zu einer der arr_places.
+        Ist arr_places leer (Ausstieg weder über Lage noch Namen zu finden), entscheidet
+        allein die Ankunftsminute – nur auf die Minute genau und mit Abschlag.
         line_score(mode, line) → Punkte oder None (passt nicht)."""
         arr_set = set(arr_places)
         best: PlanTrip | None = None
@@ -110,8 +112,14 @@ class Timetable:
                     if ls is None:
                         continue
                     a, b = self.pat_start[pat], self.pat_start[pat + 1]
-                    end = next((i for i in range(a + pos + 1, b) if self.pat_place[i] in arr_set), None)
-                    if end is None:
+                    # alle möglichen Ausstiege: im Umkreis liegen oft mehrere Halte derselben Linie
+                    if arr_set:
+                        ends = [i for i in range(a + pos + 1, b) if self.pat_place[i] in arr_set]
+                    elif arr_minute is not None:
+                        ends = list(range(a + pos + 1, b))
+                    else:
+                        ends = []
+                    if not ends:
                         continue
                     dep_off = self.pat_dep[a + pos]
                     for t in range(self.pat_trip_start[pat], self.pat_trip_start[pat + 1]):
@@ -121,12 +129,15 @@ class Timetable:
                         if abs(dep - minute) > tolerance:
                             continue
                         score = ls - abs(dep - minute)
-                        if arr_minute is not None:
-                            arr = self.trip_start[t] + self.pat_arr[end]
-                            diff = abs(arr - (arr_minute + (minute - dep_minute)))
-                            if diff > 5:
+                        if arr_minute is None:
+                            end = ends[0]
+                        else:
+                            want = arr_minute + (minute - dep_minute)
+                            end = min(ends, key=lambda i: abs(self.trip_start[t] + self.pat_arr[i] - want))
+                            diff = abs(self.trip_start[t] + self.pat_arr[end] - want)
+                            if diff > (3 if arr_set else 1):
                                 continue
-                            score -= diff / 2
+                            score -= diff / 2 + (0 if arr_set else 20)
                         if best is None or score > best.score:
                             start = self.trip_start[t]
                             stops = []

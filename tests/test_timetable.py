@@ -90,3 +90,22 @@ def test_pruefung_und_packen(tmp_path):
     m = publish.publish(str(out), "2026-11-01", str(tmp_path / "dist"), "fahrplan-de.bin.gz", "fahrplan-manifest.json")
     assert m["kind"] == "timetable" and m["window_start"] == "2026-10-31" and m["file"] == "fahrplan-de.bin.gz"
     assert (tmp_path / "dist" / "fahrplan-manifest.json").exists()
+
+
+def test_naechster_halt_im_umkreis_ist_nicht_der_ausstieg(tt):
+    """Moritzplatz liegt 270 m vom Königsplatz: Die Fahrt endet am Halt mit passender Ankunft."""
+    dep = tt.near(48.3470, 10.8764)
+    arr = tt.near(48.3683, 10.8986, radius_km=0.6)            # erfasst Königsplatz und Moritzplatz
+    trip = tt.find(dep, arr, date(2026, 11, 1), 14 * 60 + 5, line_score("tram", "STR 1"), arr_minute=14 * 60 + 16)
+    assert names(trip)[-1] == "Augsburg, Moritzplatz"
+    trip = tt.find(dep, arr, date(2026, 11, 1), 14 * 60 + 5, line_score("tram", "STR 1"), arr_minute=14 * 60 + 14)
+    assert names(trip)[-1] == "Augsburg, Königsplatz"
+    assert tt.find(dep, arr, date(2026, 11, 1), 14 * 60 + 5, line_score("tram", "STR 1"), arr_minute=14 * 60 + 30) is None
+
+
+def test_ausstieg_unbekannt_dann_entscheidet_die_ankunftsminute(tt):
+    nbg = tt.named([tt.key("Nürnberg Hbf")])
+    trip = tt.find(nbg, [], date(2026, 11, 15), 16 * 60 + 36, line_score("longdistance", "ICE 1004", "ICE"), arr_minute=17 * 60 + 42)
+    assert names(trip)[-1] == "Erfurt Hbf"
+    assert tt.find(nbg, [], date(2026, 11, 15), 16 * 60 + 36, line_score("longdistance", "ICE"), arr_minute=17 * 60 + 45) is None
+    assert tt.find(nbg, [], date(2026, 11, 15), 16 * 60 + 36, line_score("longdistance", "ICE")) is None, "ohne Ankunft keine Raterei"
