@@ -38,7 +38,8 @@ def run(path: str, samples: int = 300) -> tuple[str, float]:
     modes = Counter(m for m, _l in tt.routes)
     lines = [f"Fahrplan `{path}` – geladen in {load:.1f} s", "",
              f"Zeitraum ab {tt.window_start}, {tt.window_days} Tage; Stationen {c.get('places')}, Linien {c.get('routes')} "
-             f"({', '.join(f'{k} {v}' for k, v in sorted(modes.items()))}), Muster {c.get('patterns')}, Fahrten {c.get('trips')}", ""]
+             f"({', '.join(f'{k} {v}' for k, v in sorted(modes.items()))}), Muster {c.get('patterns')}, Fahrten {c.get('trips')}",
+             f"Halte ohne Station (übersprungen): {c.get('missing_stop_times')}", ""]
 
     rnd = random.Random(1)
     n_trips = len(tt.trip_start)
@@ -70,6 +71,13 @@ def run(path: str, samples: int = 300) -> tuple[str, float]:
     lines += [f"Stichprobe: {ok} von {tried} Fahrten wiedergefunden ({share:.1%}), {(time.time() - t1) / max(tried, 1) * 1000:.1f} ms je Suche", ""]
 
     day = tt.window_start + timedelta(days=1)
+    lines.append("Stationen der Beispiele (Name im GTFS, Muster):")
+    for name in sorted({n for a, b, *_ in EXAMPLES for n in (a, b)}):
+        word = name.split()[-1].lower()
+        city = name.split()[0].lower()
+        hits = [(i, p) for i, p in enumerate(tt.places) if word in p[0].lower() and city in p[0].lower()][:6]
+        lines.append(f"- {name}: " + "; ".join(f"{p[0]} ({tt.place_start[i + 1] - tt.place_start[i]})" for i, p in hits))
+    lines.append("")
     for a_name, b_name, mode, line in EXAMPLES:
         dep, arr = tt.named([tt.key(a_name)]), tt.named([tt.key(b_name)])
         hits = []
@@ -83,7 +91,8 @@ def run(path: str, samples: int = 300) -> tuple[str, float]:
             lines.append(f"- {a_name} → {b_name} ({line}) am {day}: nichts gefunden")
             continue
         for trip in hits:
-            lines.append(f"- {a_name} → {b_name} am {day}: {trip.line} ab {_hhmm(trip.stops[0].departure)}, an {_hhmm(trip.stops[-1].arrival)}, {len(trip.stops)} Halte")
+            lines.append(f"- {a_name} → {b_name} am {day}: {trip.line} ab {_hhmm(trip.stops[0].departure)}, an {_hhmm(trip.stops[-1].arrival)}, "
+                         f"{len(trip.stops)} Halte: " + ", ".join(s.name for s in trip.stops[1:-1])[:300])
     return "\n".join(lines), share
 
 

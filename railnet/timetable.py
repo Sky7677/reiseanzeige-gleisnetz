@@ -84,6 +84,7 @@ class Builder:
         self.pat_list: list[tuple] = []
         self.trips: set[tuple[int, int, int]] = set()
         self.window_start: date | None = None
+        self.missing_stops: dict[str, int] = defaultdict(int)
 
     # --- Stationen ---
 
@@ -137,7 +138,6 @@ class Builder:
     # --- Fahrten ---
 
     def read_feed(self, feed: str, z: zipfile.ZipFile) -> int:
-        self.read_stops(z)
         routes = {}
         for r in _rows(z, "routes.txt"):
             name = (r.get("route_short_name") or r.get("route_long_name") or "").strip()
@@ -160,8 +160,10 @@ class Builder:
             tid = st["trip_id"]
             if tid in trips:
                 place = self.stop_place.get(st["stop_id"])
-                if place is not None:
-                    stops[tid].append((int(st["stop_sequence"]), _minutes(st["arrival_time"]), _minutes(st["departure_time"]), place))
+                if place is None:
+                    self.missing_stops[feed] += 1
+                    continue
+                stops[tid].append((int(st["stop_sequence"]), _minutes(st["arrival_time"]), _minutes(st["departure_time"]), place))
         n = 0
         for tid, seq in stops.items():
             seq.sort()
@@ -244,11 +246,13 @@ def build(feeds: dict[str, str], output_path: str, source: str = "") -> dict:
     b = Builder()
     zips = {name: zipfile.ZipFile(path) for name, path in feeds.items()}
     b.window_start = b.window(list(zips.values()))
+    for z in zips.values():   # erst alle Halte: Fahrten eines Feeds können Halte eines anderen nutzen
+        b.read_stops(z)
     trips_read = {name: b.read_feed(name, z) for name, z in zips.items()}
     blocks = b.blocks()
     counts = {"places": len(b.places), "routes": len(b.routes), "patterns": len(b.pat_list),
               "trips": len(blocks["trip_start"][1]), "pattern_stops": len(blocks["pat_place"][1]),
-              "trips_read": trips_read}
+              "trips_read": trips_read, "missing_stop_times": dict(b.missing_stops)}
     header = {
         "kind": "timetable",
         "created": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),

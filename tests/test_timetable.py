@@ -86,7 +86,7 @@ def test_pruefung_und_packen(tmp_path):
     timetable.build(feeds(tmp_path), str(out), source="test")
     text, share = timetable_check.run(str(out))
     assert share == 1.0 and "Stichprobe: 5 von 5" in text
-    assert "Augsburg Hbf → Nürnberg Hbf am 2026-11-01: RE1 ab 14:37, an 15:49, 4 Halte" in text
+    assert "Augsburg Hbf → Nürnberg Hbf am 2026-11-01: RE1 ab 14:37, an 15:49, 4 Halte: Donauwörth, Treuchtlingen" in text
     m = publish.publish(str(out), "2026-11-01", str(tmp_path / "dist"), "fahrplan-de.bin.gz", "fahrplan-manifest.json")
     assert m["kind"] == "timetable" and m["window_start"] == "2026-10-31" and m["file"] == "fahrplan-de.bin.gz"
     assert (tmp_path / "dist" / "fahrplan-manifest.json").exists()
