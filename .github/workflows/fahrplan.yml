@@ -1,0 +1,87 @@
+name: Fahrplan bauen
+
+# Täglich aus den freien GTFS-Feeds von gtfs.de (Daten DELFI e.V., CC BY 4.0).
+# Die Feeds reichen 30 Tage voraus und werden täglich neu erzeugt.
+on:
+  schedule:
+    - cron: "17 12 * * *"
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Veröffentlichen (aus: nur Probelauf, Ergebnis als Artefakt)"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fahrplan
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - name: Werkzeuge und Tests
+        run: |
+          pip install -e ".[test]"
+          pytest -q
+
+      - name: GTFS-Feeds laden (gtfs.de)
+        run: |
+          UA="reiseanzeige-gleisnetz (+https://github.com/${{ github.repository }})"
+          for f in fv rv nv; do
+            curl -fSL --retry 3 --no-progress-meter -A "$UA" -o "$f.zip" "https://download.gtfs.de/germany/${f}_free/latest.zip"
+            ls -la "$f.zip"
+          done
+          echo "VERSION=$(date -u +%F)" >> "$GITHUB_ENV"
+
+      - name: Fahrplan bauen
+        run: python -m railnet.timetable fv.zip rv.zip nv.zip fahrplan-de.bin --source "gtfs.de (fv, rv, nv), geladen $(date -u +%FT%TZ)"
+
+      - name: Prüfen
+        run: python -m railnet.timetable_check fahrplan-de.bin --report report.md
+
+      - name: Prüfbericht in die Zusammenfassung
+        if: always()
+        run: '[ -f report.md ] && cat report.md >> "$GITHUB_STEP_SUMMARY" || true'
+
+      - name: Packen
+        run: python -m railnet.publish fahrplan-de.bin --version "$VERSION" --out dist --file-name fahrplan-de.bin.gz --manifest-name fahrplan-manifest.json
+
+      - name: Ergebnis aufbewahren (3 Tage)
+        if: github.event_name == 'workflow_dispatch' && !inputs.publish
+        uses: actions/upload-artifact@v4
+        with:
+          name: fahrplan
+          path: |
+            dist/*
+            report.md
+          retention-days: 3
+
+      - name: Veröffentlichen (Release „fahrplan“, wird täglich ersetzt)
+        if: github.event_name == 'schedule' || inputs.publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo "Fahrplan für Bahn, Straßenbahn und U-Bahn in Deutschland, gebaut am $VERSION, gültig für die nächsten 30 Tage."
+            echo
+            echo "**Lizenz der Daten:** Fahrplandaten DELFI e.V., aufbereitet von [gtfs.de](https://gtfs.de), unter [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Verdichtet mit dem Code dieses Repositorys."
+            echo
+            echo "## Prüfung"
+            echo
+            cat report.md
+          } > notes.md
+          if gh release view fahrplan >/dev/null 2>&1; then
+            gh release upload fahrplan dist/* --clobber
+            gh release edit fahrplan --title "Fahrplan $VERSION" --notes-file notes.md --prerelease --latest=false
+          else
+            gh release create fahrplan dist/* --title "Fahrplan $VERSION" --notes-file notes.md --prerelease --latest=false
+          fi

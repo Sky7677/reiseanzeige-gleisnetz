@@ -28,12 +28,12 @@ def sha256(path: str) -> str:
     return h.hexdigest()
 
 
-def publish(net_path: str, version: str, out_dir: str) -> dict:
+def publish(net_path: str, version: str, out_dir: str, file_name: str = FILE_NAME, manifest_name: str = MANIFEST) -> dict:
     os.makedirs(out_dir, exist_ok=True)
     with open(net_path, "rb") as f:
         raw = f.read()
     head, _ = ff.read(raw)
-    gz_path = os.path.join(out_dir, FILE_NAME)
+    gz_path = os.path.join(out_dir, file_name)
     with open(gz_path, "wb") as f:
         # mtime=0: gleiche Eingabe ergibt die gleiche Datei
         with gzip.GzipFile(filename="", mode="wb", fileobj=f, compresslevel=9, mtime=0) as gz:
@@ -41,7 +41,8 @@ def publish(net_path: str, version: str, out_dir: str) -> dict:
     manifest = {
         "format": head["format"],
         "version": version,
-        "file": FILE_NAME,
+        "file": file_name,
+        "kind": head.get("kind", "railnet"),
         "size": os.path.getsize(gz_path),
         "sha256": sha256(gz_path),
         "size_raw": len(raw),
@@ -51,7 +52,10 @@ def publish(net_path: str, version: str, out_dir: str) -> dict:
         "license": head.get("license"),
         "counts": head.get("counts"),
     }
-    with open(os.path.join(out_dir, MANIFEST), "w", encoding="utf-8") as f:
+    for key in ("window_start", "window_days"):
+        if key in head:
+            manifest[key] = head[key]
+    with open(os.path.join(out_dir, manifest_name), "w", encoding="utf-8") as f:
         json.dump(manifest, f, ensure_ascii=False, indent=2)
         f.write("\n")
     return manifest
@@ -62,8 +66,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("net")
     p.add_argument("--version", required=True)
     p.add_argument("--out", default="dist")
+    p.add_argument("--file-name", default=FILE_NAME)
+    p.add_argument("--manifest-name", default=MANIFEST)
     a = p.parse_args(argv)
-    m = publish(a.net, a.version, a.out)
+    m = publish(a.net, a.version, a.out, a.file_name, a.manifest_name)
     print(json.dumps(m, ensure_ascii=False, indent=2))
     return 0
 
