@@ -31,6 +31,14 @@ CHECKS = [
 MAX_DETOUR = 1.8   # Gleisweg höchstens so viel länger als die Luftlinie
 
 
+def _similar(stations: list, name: str, limit: int = 6) -> list:
+    """Einträge, deren Name mit dem Ort beginnt und Bahnhof/Hbf enthält – zur Fehlersuche."""
+    city = name.split()[0].lower()
+    hits = [s for s in stations if s[0].lower().startswith(city) and s[5] == "rail"]
+    hits.sort(key=lambda s: (0 if "hbf" in s[0].lower() or "haupt" in s[0].lower() else 1, s[0]))
+    return hits[:limit]
+
+
 def run(path: str, checks: list = CHECKS) -> tuple[str, int, int]:
     t0 = time.time()
     net = RailNet.load(path)
@@ -52,11 +60,17 @@ def run(path: str, checks: list = CHECKS) -> tuple[str, int, int]:
 
     lines += ["| Verbindung | Art | Luftlinie | Gleisweg | Faktor | Rechenzeit | Ergebnis |", "|---|---|---|---|---|---|---|"]
     ok = 0
+    hints: list[str] = []
     for a, b, mode, label in checks:
         sa, sb = by_eva.get(a), by_eva.get(b)
         if not sa or not sb:
             missing = ", ".join(x for x, s in ((a, sa), (b, sb)) if not s)
             lines.append(f"| {label} | {mode} | – | – | – | – | Bahnhof fehlt ({missing}) |")
+            names = [n.strip() for n in label.split("→")]
+            for eva, s, name in ((a, sa, names[0]), (b, sb, names[-1])):
+                if not s:
+                    hints.append(f"- {eva} ({name}), Einträge gleichen Orts: " + "; ".join(
+                        f"{x[0]} [{x[1] or '–'}, {x[5]}]" for x in _similar(net.stations, name)) or "keine")
             continue
         pa, pb = (sa[3], sa[4]), (sb[3], sb[4])
         crow = dist_m(pa, pb) / 1000
@@ -72,6 +86,8 @@ def run(path: str, checks: list = CHECKS) -> tuple[str, int, int]:
         ok += good
         lines.append(f"| {label} | {mode} | {crow:.0f} km | {length:.0f} km | {factor:.2f} | {secs:.1f} s | {'ok' if good else 'unplausibel'} |")
     lines += ["", f"{ok} von {len(checks)} Verbindungen plausibel."]
+    if hints:
+        lines += ["", "Fehlende Bahnhöfe:", *dict.fromkeys(hints)]
     return "\n".join(lines), ok, len(checks)
 
 

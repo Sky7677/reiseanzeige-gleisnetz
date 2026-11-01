@@ -5,6 +5,11 @@ on:
   schedule:
     - cron: "23 2 4 * *"
   workflow_dispatch:
+    inputs:
+      publish:
+        description: "Veröffentlichen (aus: nur Probelauf, Ergebnis als Artefakt)"
+        type: boolean
+        default: true
 
 permissions:
   contents: write
@@ -55,12 +60,23 @@ jobs:
         run: |
           osmium tags-filter germany.osm.pbf \
             w/railway=rail,light_rail,subway,tram,narrow_gauge \
-            n/railway=station,halt,tram_stop,stop \
-            n/public_transport=stop_position,station \
+            n/railway=tram_stop,stop \
+            nwr/railway=station,halt \
+            n/public_transport=stop_position \
+            nwr/public_transport=station \
+            r/public_transport=stop_area \
             r/route=light_rail,subway,tram \
             -o rail.osm.pbf
           rm germany.osm.pbf
           ls -la rail.osm.pbf
+
+      - name: Gefilterte Daten aufbewahren (zur Fehlersuche, 7 Tage)
+        uses: actions/upload-artifact@v4
+        with:
+          name: rail-osm
+          path: rail.osm.pbf
+          retention-days: 7
+          compression-level: 0
 
       - name: Gleisnetz bauen
         run: python -m railnet.build rail.osm.pbf gleisnetz-de.bin --source "Geofabrik germany-latest.osm.pbf, Stand $STAND"
@@ -68,10 +84,26 @@ jobs:
       - name: Mit echten Verbindungen prüfen
         run: python -m railnet.check gleisnetz-de.bin --report report.md
 
+      - name: Prüfbericht in die Zusammenfassung
+        if: always()
+        run: '[ -f report.md ] && cat report.md >> "$GITHUB_STEP_SUMMARY" || true'
+
+      - name: Ergebnis aufbewahren (7 Tage)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gleisnetz
+          path: |
+            gleisnetz-de.bin
+            report.md
+          retention-days: 7
+          if-no-files-found: ignore
+
       - name: Packen
         run: python -m railnet.publish gleisnetz-de.bin --version "$VERSION" --out dist
 
       - name: Veröffentlichen
+        if: github.event_name == 'schedule' || inputs.publish
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
