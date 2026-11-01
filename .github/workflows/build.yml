@@ -34,9 +34,17 @@ jobs:
 
       - name: Deutschland-Auszug laden (Geofabrik)
         run: |
-          curl -fsSL --retry 3 -A "reiseanzeige-gleisnetz (+https://github.com/${{ github.repository }})" -o germany.osm.pbf "$GEOFABRIK"
-          curl -fsSL --retry 3 -o germany.osm.pbf.md5 "$GEOFABRIK.md5"
-          echo "$(cut -d' ' -f1 germany.osm.pbf.md5)  germany.osm.pbf" | md5sum -c -
+          UA="reiseanzeige-gleisnetz (+https://github.com/${{ github.repository }})"
+          echo "Lade $GEOFABRIK"
+          curl -fSL --retry 3 --no-progress-meter -A "$UA" -o germany.osm.pbf "$GEOFABRIK"
+          ls -la germany.osm.pbf
+          # Prüfsumme, falls Geofabrik sie anbietet. Ein abgebrochener Download fällt auch
+          # ohne sie auf: curl meldet ihn, und osmium liest die Datei danach vollständig.
+          if curl -fsSL --retry 3 -A "$UA" -o germany.osm.pbf.md5 "$GEOFABRIK.md5"; then
+            echo "$(cut -d' ' -f1 germany.osm.pbf.md5)  germany.osm.pbf" | md5sum -c -
+          else
+            echo "::warning::Keine Prüfsumme unter $GEOFABRIK.md5 – weiter ohne MD5-Vergleich"
+          fi
           STAND=$(osmium fileinfo -j germany.osm.pbf | jq -r '.header.option.osmosis_replication_timestamp // empty')
           [ -n "$STAND" ] || STAND=$(date -u +%FT%TZ)
           echo "STAND=$STAND" >> "$GITHUB_ENV"
