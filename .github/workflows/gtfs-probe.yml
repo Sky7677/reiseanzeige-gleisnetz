@@ -1,0 +1,29 @@
+name: GTFS ansehen (Probelauf)
+
+# Nur von Hand: lädt die freien GTFS-Feeds von gtfs.de und gibt Aufbau,
+# Größen und Beispiele aus. Veröffentlicht nichts.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - name: Feeds laden
+        run: |
+          UA="reiseanzeige-gleisnetz (+https://github.com/${{ github.repository }})"
+          for f in fv rv nv; do
+            curl -fSL --retry 3 --no-progress-meter -A "$UA" -o "$f.zip" "https://download.gtfs.de/germany/${f}_free/latest.zip"
+            ls -la "$f.zip"
+            unzip -l "$f.zip"
+          done
+      - name: Aufbau und Beispiele
+        run: python scripts/gtfs_probe.py fv.zip rv.zip nv.zip
