@@ -1,8 +1,10 @@
 """Fahrplan aus GTFS bauen (Feeds von gtfs.de, Daten DELFI e.V., CC BY 4.0).
 
 Eingabe: die freien Feeds Fernverkehr (fv), Regionalverkehr (rv) und Nahverkehr
-(nv) als Zip. Aus fv und rv kommen alle Züge, aus nv nur Straßenbahn
-(route_type 0) und U-Bahn (1); Busse und Fähren bleiben draußen.
+(nv) als Zip. Aus fv und rv kommen alle Züge, aus nv Straßenbahn (route_type 0)
+und U-Bahn (1). Von den Bussen nur der Ersatzverkehr für die Bahn (SEV): route_type
+714 oder ein Bus mit dem Namen einer Bahnlinie („RE80“, „S2“, „SEV“) – deutschlandweit
+rund 600 Linien. Übrige Busse und Fähren bleiben draußen (Größe der Datei).
 
 Verdichtung: Fahrten mit gleicher Linie, gleicher Haltfolge und gleichen
 Fahrzeiten bilden ein Muster. Je Fahrt bleiben Muster, Startminute und die
@@ -13,6 +15,7 @@ Halte werden zu Stationen zusammengefasst (parent_station), mit Name und Lage.
 Blöcke (Format wie railnet/fileformat.py, Kopf "kind": "timetable"):
     places          json [[name, lat, lon], …]
     routes          json [[mode, name], …]  mode: longdistance | regional | suburban | tram | subway
+                                            | replacement (Ersatzbus)
     pat_route       I    Linie je Muster
     pat_start       I    Anfang je Muster in pat_place/pat_arr/pat_dep, Länge P+1
     pat_place       I    Station
@@ -44,6 +47,9 @@ from . import fileformat as ff
 
 MAX_DAYS = 32
 NV_TYPES = {"0": "tram", "1": "subway"}
+BUS_TYPES = {"3", "11", "200", "201", "202"} | {str(t) for t in range(700, 800)}
+SEV_NAME = re.compile(r"^(SEV|EV|RE|RB|IRE|S)\s?\d{0,4}[A-Z]?$", re.I)
+SEV_TEXT = re.compile(r"ersatz|\bSEV\b", re.I)
 LICENSE = "CC BY 4.0 – Fahrplandaten DELFI e.V., aufbereitet von gtfs.de"
 
 
@@ -65,7 +71,11 @@ def _date(s: str) -> date:
     return date(int(s[:4]), int(s[4:6]), int(s[6:8]))
 
 
-def mode_of(feed: str, route_type: str, name: str) -> str | None:
+def mode_of(feed: str, route_type: str, name: str, long_name: str = "") -> str | None:
+    if route_type == "714" or (route_type in BUS_TYPES and (SEV_NAME.match((name or "").strip()) or SEV_TEXT.search(long_name or ""))):
+        return "replacement"   # Ersatzverkehr für die Bahn
+    if route_type in BUS_TYPES:
+        return None
     if feed == "fv":
         return "longdistance"
     if feed == "rv":
@@ -141,7 +151,7 @@ class Builder:
         routes = {}
         for r in _rows(z, "routes.txt"):
             name = (r.get("route_short_name") or r.get("route_long_name") or "").strip()
-            mode = mode_of(feed, r.get("route_type", ""), name)
+            mode = mode_of(feed, r.get("route_type", ""), name, f'{r.get("route_long_name") or ""} {r.get("route_desc") or ""}')
             if mode and name:
                 key = (mode, name)
                 if key not in self.route_index:

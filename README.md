@@ -12,7 +12,7 @@ Das Netz wird monatlich per GitHub Actions neu gebaut und als Release veröffent
 
 ## Fahrplan
 
-Ein zweiter, täglicher Lauf (`.github/workflows/fahrplan.yml`, **Actions → Fahrplan bauen**) verdichtet die freien GTFS-Feeds von [gtfs.de](https://gtfs.de) zu einer kleinen Datei: alle Züge aus Fern- und Regionalverkehr, dazu Straßenbahn und U-Bahn, jeweils 30 Tage voraus. Fahrten mit gleicher Haltfolge und Fahrzeit bilden ein Muster; je Fahrt bleiben Startminute und Verkehrstage. Busse sind nicht dabei.
+Ein zweiter, täglicher Lauf (`.github/workflows/fahrplan.yml`, **Actions → Fahrplan bauen**) verdichtet die freien GTFS-Feeds von [gtfs.de](https://gtfs.de) zu einer kleinen Datei: alle Züge aus Fern- und Regionalverkehr, dazu Straßenbahn und U-Bahn, jeweils 30 Tage voraus. Fahrten mit gleicher Haltfolge und Fahrzeit bilden ein Muster; je Fahrt bleiben Startminute und Verkehrstage. Von den Bussen ist nur der Ersatzverkehr für die Bahn dabei (Verkehrsmittel 714 oder Bus mit dem Namen einer Bahnlinie wie „RE80“); damit zeigt die Abfahrtstafel geplanten Ersatzverkehr, den die Timetables-API der Bahn oft nicht kennt.
 
 Damit kennt die Reiseanzeige die Zwischenhalte eines Zuges schon Tage vor der Fahrt und die von Straßenbahn und U-Bahn überhaupt. Die freien Feeds haben keine Zugnummern; `railnet/plan.py` findet die Fahrt über Einstiegs-Station, Abfahrtsminute, Linie und Ausstieg.
 

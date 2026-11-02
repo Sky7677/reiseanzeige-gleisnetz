@@ -13,7 +13,7 @@ from gtfs import feeds
 def tt(tmp_path):
     out = tmp_path / "fahrplan.bin"
     counts = timetable.build(feeds(tmp_path), str(out), source="test")
-    assert counts["trips_read"] == {"fv": 1, "rv": 3, "nv": 1}, "Bus nicht gelesen"
+    assert counts["trips_read"] == {"fv": 1, "rv": 3, "nv": 2}, "Bus nicht gelesen, Ersatzbus schon"
     return Timetable(out.read_bytes())
 
 
@@ -24,9 +24,10 @@ def names(trip):
 def test_aufbau(tt):
     assert tt.header["kind"] == "timetable" and tt.header["license"].startswith("CC BY 4.0")
     assert tt.window_start == date(2026, 10, 31)
-    assert len(tt.places) == 9, "nur benutzte Stationen, ohne Bushalt"
-    assert tt.header["counts"]["patterns"] == 3, "zwei RE1 und die Nachtfahrt teilen ein Muster"
-    assert tt.header["counts"]["trips"] == 5
+    assert len(tt.places) == 11, "nur benutzte Stationen, ohne Bushalt (aber mit Halten des Ersatzbusses)"
+    assert tt.header["counts"]["patterns"] == 4, "zwei RE1 und die Nachtfahrt teilen ein Muster; dazu der Ersatzbus"
+    assert tt.header["counts"]["trips"] == 6
+    assert ["replacement", "RE1"] in tt.routes and not any(line == "32" for _m, line in tt.routes)
 
 
 def test_regionalzug_mit_zwischenhalten(tt):
@@ -85,7 +86,7 @@ def test_pruefung_und_packen(tmp_path):
     out = tmp_path / "fahrplan.bin"
     timetable.build(feeds(tmp_path), str(out), source="test")
     text, share = timetable_check.run(str(out))
-    assert share == 1.0 and "Stichprobe: 5 von 5" in text
+    assert share == 1.0 and "Stichprobe: 6 von 6" in text
     assert "Augsburg Hbf → Nürnberg Hbf am 2026-11-01: RE1 ab 14:37, an 15:49, 4 Halte: Donauwörth, Treuchtlingen" in text
     m = publish.publish(str(out), "2026-11-01", str(tmp_path / "dist"), "fahrplan-de.bin.gz", "fahrplan-manifest.json")
     assert m["kind"] == "timetable" and m["window_start"] == "2026-10-31" and m["file"] == "fahrplan-de.bin.gz"
@@ -109,3 +110,17 @@ def test_ausstieg_unbekannt_dann_entscheidet_die_ankunftsminute(tt):
     assert names(trip)[-1] == "Erfurt Hbf"
     assert tt.find(nbg, [], date(2026, 11, 15), 16 * 60 + 36, line_score("longdistance", "ICE"), arr_minute=17 * 60 + 45) is None
     assert tt.find(nbg, [], date(2026, 11, 15), 16 * 60 + 36, line_score("longdistance", "ICE")) is None, "ohne Ankunft keine Raterei"
+
+
+def test_ersatzbus_abfahrten(tt):
+    near_hbf = tt.near(48.3655, 10.8856, 0.5)
+    deps = tt.departures(near_hbf, date(2026, 11, 1), 23 * 60, 90, modes={"replacement"})
+    assert [(d.minute, d.line, d.stop, d.to) for d in deps] == [(23 * 60 + 41, "RE1", "Hauptbahnhof, Augsburg", "Bahnhof, Donauwörth")]
+    assert tt.departures(near_hbf, date(2026, 11, 2), -30, 60, modes={"replacement"})[0].minute == -19, "Vortag, kurz vor Mitternacht"
+    assert tt.departures(near_hbf, date(2026, 11, 1), 23 * 60, 90, modes={"tram"}) == []
+    don = tt.near(48.7140, 10.7722, 0.3)
+    assert tt.departures(don, date(2026, 11, 1), 23 * 60, 120, modes={"replacement"}) == [], "Endhalt: keine Abfahrt"
+    # Abschnitt „Bus RE1“ aus dem geteilten Text findet den Ersatzbus
+    trip = tt.find(near_hbf, don, date(2026, 11, 1), 23 * 60 + 41, line_score("bus", "Bus RE1", "BUS"))
+    assert trip and trip.mode == "replacement" and trip.stops[-1].arrival == 24 * 60 + 30
+    assert line_score("regional", "RE1", "RE")("replacement", "RE1") is None, "Zug passt nicht zum Ersatzbus"

@@ -63,14 +63,19 @@ def feeds(tmp_path) -> dict[str, str]:
     })
     nv = write_zip(tmp_path / "nv.zip", {
         "stops.txt": [stop("10", "Göggingen (Augsburg), Maria Stern", "48.3470", "10.8764"), stop("9", "Augsburg, Königsplatz", "48.3656", "10.8939"),
-                      stop("8", "Augsburg, Moritzplatz", "48.3683", "10.8986"), stop("12", "Augsburg, Bushalt", "48.37", "10.90")],
+                      stop("8", "Augsburg, Moritzplatz", "48.3683", "10.8986"), stop("12", "Augsburg, Bushalt", "48.37", "10.90"),
+                      stop("13", "Hauptbahnhof, Augsburg", "48.3651", "10.8862"), stop("14", "Bahnhof, Donauwörth", "48.7140", "10.7722")],
         "routes.txt": [{"route_long_name": "", "route_short_name": "1", "agency_id": "3", "route_type": "0", "route_id": "30"},
-                       {"route_long_name": "", "route_short_name": "32", "agency_id": "3", "route_type": "3", "route_id": "31"}],
+                       {"route_long_name": "", "route_short_name": "32", "agency_id": "3", "route_type": "3", "route_id": "31"},
+                       # Ersatzverkehr: Bus mit dem Namen der Bahnlinie
+                       {"route_long_name": "", "route_short_name": "RE1", "agency_id": "4", "route_type": "3", "route_id": "32"}],
         "calendar.txt": [cal("C", ALL, "20261031", "20261130")],
         "calendar_dates.txt": [],
-        "trips.txt": [{"route_id": "30", "service_id": "C", "trip_id": "T5"}, {"route_id": "31", "service_id": "C", "trip_id": "T6"}],
+        "trips.txt": [{"route_id": "30", "service_id": "C", "trip_id": "T5"}, {"route_id": "31", "service_id": "C", "trip_id": "T6"},
+                      {"route_id": "32", "service_id": "C", "trip_id": "T7"}],
         "stop_times.txt": [st("T5", 0, "14:05:00", "14:05:00", "10"), st("T5", 1, "14:14:00", "14:14:00", "9"),
                            st("T5", 2, "14:16:00", "14:16:00", "8"),
-                           st("T6", 0, "14:00:00", "14:00:00", "12"), st("T6", 1, "14:05:00", "14:05:00", "9")],
+                           st("T6", 0, "14:00:00", "14:00:00", "12"), st("T6", 1, "14:05:00", "14:05:00", "9"),
+                           st("T7", 0, "23:41:00", "23:41:00", "13"), st("T7", 1, "24:30:00", "24:30:00", "14")],
     })
     return {"fv": fv, "rv": rv, "nv": nv}
