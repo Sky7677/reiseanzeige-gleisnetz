@@ -124,3 +124,5 @@ def test_ersatzbus_abfahrten(tt):
     trip = tt.find(near_hbf, don, date(2026, 11, 1), 23 * 60 + 41, line_score("bus", "Bus RE1", "BUS"))
     assert trip and trip.mode == "replacement" and trip.stops[-1].arrival == 24 * 60 + 30
     assert line_score("regional", "RE1", "RE")("replacement", "RE1") is None, "Zug passt nicht zum Ersatzbus"
+    assert line_score("bus", "Bus 32", "BUS")("replacement", "RE1") is None, "Stadtbus passt nicht zum Ersatzbus"
+    assert line_score("bus", "Bus SEV", "BUS")("replacement", "RE1") == 10, "als SEV gekennzeichnet: über Halt und Minute"

@@ -196,8 +196,9 @@ def line_score(leg_mode: str, leg_line: str, leg_category: str | None = None) ->
     """Bewertung für find(). Gleiche Linie oder Gattung zählt viel: „RE1“ = „RE 1“,
     „ICE 1004“ passt zu „ICE“, „STR 1“ zu „1“. Sonst passt jede Fahrt desselben
     Verkehrsmittels; Station und Minute entscheiden. Tram und U-Bahn werden je nach
-    Quelle verschieden eingeordnet (Stadtbahn), daher gegenseitig mit Abschlag; ebenso
-    Bus und Ersatzbus („Bus RE80“ passt zum Ersatzverkehr „RE80“)."""
+    Quelle verschieden eingeordnet (Stadtbahn), daher gegenseitig mit Abschlag. Ein Bus
+    passt zum Ersatzverkehr nur über die Linie („Bus RE80“ zu „RE80“) oder wenn er als
+    SEV gekennzeichnet ist – sonst nie ein Stadtbus, der zufällig zur selben Minute fährt."""
     import re
 
     norm = lambda s: "".join((s or "").upper().split())
@@ -214,7 +215,11 @@ def line_score(leg_mode: str, leg_line: str, leg_category: str | None = None) ->
         if leg_mode in RAIL:
             if mode not in RAIL:
                 return None
-        elif mode != leg_mode and {mode, leg_mode} not in ({"tram", "subway"}, {"bus", "replacement"}):
+        elif {mode, leg_mode} == {"bus", "replacement"}:
+            if norm(line) in refs:
+                return 95.0
+            return 10.0 if refs & {"SEV", "EV", "BUSSEV", "BUSEV"} else None
+        elif mode != leg_mode and {mode, leg_mode} != {"tram", "subway"}:
             return None
         base = 100.0 if norm(line) in refs else 10.0
         return base if mode == leg_mode or leg_mode in RAIL else base - 5
