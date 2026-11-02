@@ -1,9 +1,15 @@
 name: GTFS ansehen (Probelauf)
 
 # Nur von Hand: lädt die freien GTFS-Feeds von gtfs.de und gibt Aufbau,
-# Größen und Beispiele aus. Veröffentlicht nichts.
+# Größen und Beispiele aus – oder, mit sev_dates, den Ersatzverkehr (SEV) in den
+# Nächten dieser Tage (deutschlandweit, scripts/gtfs_sev.py). Veröffentlicht nichts.
 on:
   workflow_dispatch:
+    inputs:
+      sev_dates:
+        description: "Nur Ersatzverkehr: Tage, z. B. 2026-11-02,2026-11-03 (leer = allgemeiner Probelauf)"
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -23,7 +29,13 @@ jobs:
           for f in fv rv nv; do
             curl -fSL --retry 3 --no-progress-meter -A "$UA" -o "$f.zip" "https://download.gtfs.de/germany/${f}_free/latest.zip"
             ls -la "$f.zip"
-            unzip -l "$f.zip"
+            [ -z "${{ inputs.sev_dates }}" ] && unzip -l "$f.zip" || true
           done
       - name: Aufbau und Beispiele
+        if: inputs.sev_dates == ''
         run: python scripts/gtfs_probe.py fv.zip rv.zip nv.zip
+      - name: Ersatzverkehr in der Nacht
+        if: inputs.sev_dates != ''
+        env:
+          SEV_DATES: ${{ inputs.sev_dates }}
+        run: python scripts/gtfs_sev.py "$SEV_DATES" nv.zip rv.zip fv.zip
