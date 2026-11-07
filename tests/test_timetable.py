@@ -116,6 +116,7 @@ def test_ersatzbus_abfahrten(tt):
     near_hbf = tt.near(48.3655, 10.8856, 0.5)
     deps = tt.departures(near_hbf, date(2026, 11, 1), 23 * 60, 90, modes={"replacement"})
     assert [(d.minute, d.line, d.stop, d.to) for d in deps] == [(23 * 60 + 41, "RE1", "Hauptbahnhof, Augsburg", "Bahnhof, Donauwörth")]
+    assert abs(deps[0].to_at[0] - 48.714) < 0.01 and abs(deps[0].to_at[1] - 10.772) < 0.01, "Lage des Ziels"
     assert tt.departures(near_hbf, date(2026, 11, 2), -30, 60, modes={"replacement"})[0].minute == -19, "Vortag, kurz vor Mitternacht"
     assert tt.departures(near_hbf, date(2026, 11, 1), 23 * 60, 90, modes={"tram"}) == []
     don = tt.near(48.7140, 10.7722, 0.3)
