@@ -1,0 +1,85 @@
+name: Bahnhofsnummern bauen
+
+# Wöchentlich: welche EVA-Nummern ein Bahnhof hat, für die Abfragen bei OpenBoards.
+# Quellen: OpenStation (DB InfraGO, CC0), trainline-eu/stations (ODbL) und das
+# Gleisnetz dieses Repositorys (OpenStreetMap, ODbL). Siehe railnet/stations.py.
+on:
+  schedule:
+    - cron: "37 4 * * 1"
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Veröffentlichen (aus: nur Probelauf, Ergebnis als Artefakt)"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: bahnhofsnummern
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - name: Werkzeuge und Tests
+        run: |
+          pip install -e ".[test]"
+          pytest -q
+
+      - name: Quellen laden (OpenStation, trainline, Gleisnetz)
+        run: |
+          UA="reiseanzeige-gleisnetz (+https://github.com/${{ github.repository }})"
+          curl -fSL --compressed --retry 3 --no-progress-meter -A "$UA" -o openstation.xml https://bahnhof.de/daten/netex
+          curl -fSL --retry 3 --no-progress-meter -A "$UA" -o stations.csv https://raw.githubusercontent.com/trainline-eu/stations/master/stations.csv
+          curl -fSL --retry 3 --no-progress-meter -A "$UA" -o gleisnetz-de.bin.gz "https://github.com/${{ github.repository }}/releases/latest/download/gleisnetz-de.bin.gz"
+          ls -la openstation.xml stations.csv gleisnetz-de.bin.gz
+          echo "VERSION=$(date -u +%F)" >> "$GITHUB_ENV"
+
+      - name: Bauen und prüfen
+        run: python -m railnet.stations openstation.xml stations.csv gleisnetz-de.bin.gz bahnhofsnummern.json --report report.md
+
+      - name: Prüfbericht in die Zusammenfassung
+        if: always()
+        run: '[ -f report.md ] && cat report.md >> "$GITHUB_STEP_SUMMARY" || true'
+
+      - name: Packen
+        run: python -m railnet.stations --pack bahnhofsnummern.json --version "$VERSION" --out dist
+
+      - name: Ergebnis aufbewahren (3 Tage)
+        if: github.event_name == 'workflow_dispatch' && !inputs.publish
+        uses: actions/upload-artifact@v4
+        with:
+          name: bahnhofsnummern
+          path: |
+            dist/*
+            report.md
+          retention-days: 3
+
+      - name: Veröffentlichen (Release „bahnhofsnummern“, wird wöchentlich ersetzt)
+        if: github.event_name == 'schedule' || inputs.publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo "Bahnhofsnummern (EVA) für OpenBoards, gebaut am $VERSION."
+            echo
+            echo "**Quellen und Lizenz:** Nummern, amtliche Namen, RIL100 und DHID aus [OpenStation](https://developers.deutschebahn.com/db-api-marketplace/apis/product/open-station) (DB InfraGO, CC0); Lage, weitere Schreibweisen und Halte anderer Betreiber aus [trainline-eu/stations](https://github.com/trainline-eu/stations) (ODbL 1.0) und dem Gleisnetz dieses Repositorys (© OpenStreetMap-Mitwirkende, ODbL 1.0). Die Liste steht deshalb unter der ODbL 1.0."
+            echo
+            echo "## Prüfung"
+            echo
+            cat report.md
+          } > notes.md
+          if gh release view bahnhofsnummern >/dev/null 2>&1; then
+            gh release upload bahnhofsnummern dist/* --clobber
+            gh release edit bahnhofsnummern --title "Bahnhofsnummern $VERSION" --notes-file notes.md --prerelease --latest=false
+          else
+            gh release create bahnhofsnummern dist/* --title "Bahnhofsnummern $VERSION" --notes-file notes.md --prerelease --latest=false
+          fi

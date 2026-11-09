@@ -23,6 +23,21 @@ https://github.com/Sky7677/reiseanzeige-gleisnetz/releases/download/fahrplan/fah
 https://github.com/Sky7677/reiseanzeige-gleisnetz/releases/download/fahrplan/fahrplan-de.bin.gz
 ```
 
+## Bahnhofsnummern
+
+Ein dritter, wöchentlicher Lauf (`.github/workflows/bahnhofsnummern.yml`, **Actions → Bahnhofsnummern bauen**) stellt zusammen, welche EVA-Nummern ein Bahnhof hat. Die braucht OpenBoards, die Echtzeit-Schnittstelle von DB InfraGO; im Gleisnetz steht nur `uic_ref`, und das ist bei vielen großen Bahnhöfen der UIC-Code (München Hbf 8020347), nicht die EVA (8000261).
+
+- **[OpenStation](https://developers.deutschebahn.com/db-api-marketplace/apis/product/open-station)** (DB InfraGO, NeTEx, CC0, frei von `https://bahnhof.de/daten/netex`): die Nummern je Bahnhof, auch mehrere (München Hbf hat vier, Berlin Südkreuz Fern- und S-Bahn), amtlicher Name, RIL100 und DHID.
+- **[trainline-eu/stations](https://github.com/trainline-eu/stations)** (ODbL 1.0): Lage, Schreibweisen wie im DB Navigator und Halte, die OpenStation nicht führt (andere Betreiber, Grenzpunkte).
+- **Gleisnetz** (dieses Repository): Lage über RIL100, wo trainline nichts hat, etwa bei neuen Halten.
+
+`railnet/stations.py` baut daraus eine JSON-Datei (Aufbau im Kopf der Datei) und prüft sie: mindestens 5000 Bahnhöfe aus OpenStation, fast alle mit Lage, keine Nummer doppelt, die großen Bahnhöfe an ihrem Platz. Sonst wird nicht veröffentlicht. Feste Adressen (Release `bahnhofsnummern`, eine Vorabversion, die wöchentlich ersetzt wird):
+
+```
+https://github.com/Sky7677/reiseanzeige-gleisnetz/releases/download/bahnhofsnummern/bahnhofsnummern-manifest.json
+https://github.com/Sky7677/reiseanzeige-gleisnetz/releases/download/bahnhofsnummern/bahnhofsnummern.json.gz
+```
+
 ## Routing
 
 `railnet/router.py` sucht den Weg auf den Gleisen (A* über Kante und Fahrtrichtung):
@@ -69,4 +84,5 @@ python -m railnet.build rail.osm.pbf gleisnetz.bin
 
 - **Code** (dieses Repository): MIT, siehe `LICENSE`.
 - **Fahrplan** (Release `fahrplan`): Fahrplandaten DELFI e.V., aufbereitet von gtfs.de, unter [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Wer sie nutzt, nennt die Quelle.
+- **Bahnhofsnummern** (Release `bahnhofsnummern`): ODbL 1.0, weil Lage und Schreibweisen aus trainline-eu/stations und OpenStreetMap stammen; die Nummern und Namen aus OpenStation (DB InfraGO) stehen unter CC0.
 - **Gleisnetz** (Releases `daten-…`): © OpenStreetMap-Mitwirkende, verfügbar unter der [Open Database License (ODbL) 1.0](https://opendatacommons.org/licenses/odbl/1-0/). Wer die Daten weitergibt oder daraus eine Datenbank ableitet, muss sie ebenfalls unter der ODbL anbieten. Wer Karten oder Bilder daraus zeigt, nennt „© OpenStreetMap-Mitwirkende“. Näheres unter [openstreetmap.org/copyright](https://www.openstreetmap.org/copyright).
