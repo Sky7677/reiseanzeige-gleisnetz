@@ -1,0 +1,37 @@
+name: Echtzeit Deutschland ansehen (Probelauf)
+
+# Probelauf: lädt den bundesweiten Echtzeit-Strom von gtfs.de (CC BY-SA 4.0) und die
+# freien Fahrpläne (fv, rv, nv) und zeigt je Großstadt, wie viele laufende Fahrten
+# Echtzeit haben (scripts/de_rt_probe.py). Veröffentlicht nichts.
+on:
+  push:
+    branches: [claude/echtzeit-probe-de]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - run: pip install --progress-bar off gtfs-realtime-bindings
+      - name: Fahrpläne und Echtzeit laden
+        run: |
+          UA="reiseanzeige-probe (+https://github.com/${{ github.repository }})"
+          for f in fv rv nv; do
+            curl -fSL --retry 3 --no-progress-meter -A "$UA" -o "$f.zip" "https://download.gtfs.de/germany/${f}_free/latest.zip"
+            ls -la "$f.zip"
+          done
+          curl -fsS --compressed -A "$UA" -D h.txt -o rt.pb \
+            -w "Echtzeit: HTTP %{http_code}, übertragen %{size_download} Bytes, %{time_total} s\n" \
+            https://realtime.gtfs.de/realtime-free.pb | tee -a "$GITHUB_STEP_SUMMARY"
+          ls -la rt.pb
+          grep -i -E "^(etag|last-modified|cache-control|content-encoding|content-type|content-length):" h.txt || true
+      - name: Auswerten
+        run: python scripts/de_rt_probe.py rt.pb fv.zip rv.zip nv.zip | tee -a "$GITHUB_STEP_SUMMARY"
