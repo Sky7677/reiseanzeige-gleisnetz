@@ -20,7 +20,7 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
-      - run: pip install --no-progress-bar gtfs-realtime-bindings
+      - run: pip install --progress-bar off gtfs-realtime-bindings
       - name: Fahrplan und Echtzeit laden
         run: |
           UA="reiseanzeige-probe (+https://github.com/${{ github.repository }})"
