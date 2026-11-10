@@ -1,0 +1,38 @@
+name: VBB-Echtzeit ansehen (Probelauf)
+
+# Probelauf: lädt den offenen GTFS-Realtime-Feed des VBB (CC BY 4.0) drei Mal im
+# Abstand von 20 s (Grenze 7 Abrufe pro Minute) und den VBB-Fahrplan, wertet Größe,
+# Aktualität und Abdeckung aus (scripts/vbb_rt_probe.py). Veröffentlicht nichts.
+on:
+  push:
+    branches: [claude/vbb-echtzeit-probe]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - run: pip install --no-progress-bar gtfs-realtime-bindings
+      - name: Fahrplan und Echtzeit laden
+        run: |
+          UA="reiseanzeige-probe (+https://github.com/${{ github.repository }})"
+          curl -fSL --retry 3 --no-progress-meter -A "$UA" -o vbb.zip https://unternehmen.vbb.de/gtfs
+          ls -la vbb.zip
+          for i in 1 2 3; do
+            curl -fsS --compressed -A "$UA" -D "h$i.txt" -o "rt$i.pb" \
+              -w "Abruf $i: HTTP %{http_code}, übertragen %{size_download} Bytes, %{time_total} s\n" \
+              https://production.gtfsrt.vbb.de/data | tee -a "$GITHUB_STEP_SUMMARY"
+            ls -la "rt$i.pb"
+            grep -i -E "^(etag|last-modified|cache-control|content-encoding|content-type|x-ratelimit|ratelimit|age):" "h$i.txt" || true
+            if [ $i -lt 3 ]; then sleep 20; fi
+          done
+      - name: Auswerten
+        run: python scripts/vbb_rt_probe.py vbb.zip rt1.pb rt2.pb rt3.pb | tee -a "$GITHUB_STEP_SUMMARY"
