@@ -24,22 +24,36 @@ from google.transit import gtfs_realtime_pb2
 TZ = ZoneInfo("Europe/Berlin")
 CITIES = [
     ("Berlin", r"Berliner Verkehrsbetriebe|^BVG\b"),
-    ("Hamburg", r"Hochbahn"),
+    ("Hamburg", r"Hochbahn|Hamburger Verkehrsverbund"),
     ("München", r"Münchner Verkehrsgesellschaft|^MVG\b|Stadtwerke München"),
-    ("Köln", r"Kölner Verkehrs|^KVB\b"),
+    ("Köln/Bonn", r"Kölner Verkehrs|^KVB\b|Verkehrsverbund Rhein-Sieg"),
     ("Frankfurt", r"Verkehrsgesellschaft Frankfurt|^VGF\b|traffiQ"),
-    ("Stuttgart", r"Stuttgarter Straßenbahnen|^SSB\b"),
-    ("Düsseldorf", r"Rheinbahn"),
+    ("Stuttgart", r"Stuttgarter Straßenbahnen|^SSB\b|Verkehrsverbund Stuttgart"),
+    ("Düsseldorf", r"^Rheinbahn"),
     ("Dortmund", r"DSW21|Dortmunder Stadtwerke"),
-    ("Essen", r"Ruhrbahn"),
+    ("Essen", r"^Ruhrbahn|Essener Verkehrs|^EVAG"),
     ("Duisburg", r"Duisburger Verkehrs|^DVG\b"),
     ("Bochum/Gelsenkirchen", r"BOGESTRA|Bochum-Gelsenkirchener"),
     ("Leipzig", r"Leipziger Verkehrsbetriebe|^LVB\b"),
-    ("Dresden", r"Dresdner Verkehrsbetriebe|^DVB\b"),
-    ("Hannover", r"ÜSTRA|Üstra|USTRA"),
-    ("Nürnberg", r"VAG Verkehrs|VAG Nürnberg|^VAG\b"),
+    ("Dresden", r"Dresdner Verkehrsbetriebe|^DVB\b|Verkehrsverbund Oberelbe"),
+    ("Hannover", r"ÜSTRA|Üstra|USTRA|Großraumverkehr Hannover"),
+    ("Nürnberg", r"VerkehrsAG Nürnberg|VAG Verkehrs|^VAG\b"),
     ("Bremen", r"Bremer Straßenbahn|^BSAG\b"),
 ]
+
+
+def mode(route_type: str) -> str:
+    try:
+        t = int(route_type)
+    except ValueError:
+        return "?"
+    if t == 0 or 900 <= t < 1000:
+        return "Tram"
+    if t == 1 or 400 <= t < 500:
+        return "U-Bahn"
+    if t == 3 or 700 <= t < 800 or 200 <= t < 300:
+        return "Bus"
+    return "Bahn/sonst"
 
 
 def rows(z: zipfile.ZipFile, name: str):
@@ -84,6 +98,7 @@ def main(rt_path: str, zips: list[str]) -> None:
     secs = stamp.hour * 3600 + stamp.minute * 60 + stamp.second
     agency_name: dict[str, str] = {}
     route_agency: dict[str, str] = {}
+    route_mode: dict[str, str] = {}
     trip_route: dict[str, str] = {}
     active: set[str] = set()
     feeds_of_trip: dict[str, str] = {}
@@ -94,6 +109,7 @@ def main(rt_path: str, zips: list[str]) -> None:
             agency_name[f"{tag}:{r.get('agency_id', '')}"] = r["agency_name"]
         for r in rows(z, "routes.txt"):
             route_agency[f"{tag}:{r['route_id']}"] = f"{tag}:{r.get('agency_id', '')}"
+            route_mode[f"{tag}:{r['route_id']}"] = mode(r.get("route_type", ""))
         sv = services(z, day)
         for r in rows(z, "trips.txt"):
             trip_route[r["trip_id"]] = f"{tag}:{r['route_id']}"
@@ -140,13 +156,16 @@ def main(rt_path: str, zips: list[str]) -> None:
     for t, (a, b) in span.items():
         if a is not None and b is not None and a <= secs <= b:
             c = agency_city[route_agency[trip_route[t]]]
+            md = route_mode.get(trip_route[t], "?")
             running[c] += 1
+            running[(c, md)] += 1
             if t in rt:
                 covered[c] += 1
+                covered[(c, md)] += 1
     midnight = datetime.combine(day, datetime.min.time(), TZ).timestamp()
     print(f"\n## Großstädte um {stamp:%H:%M}: laufende Fahrten laut Plan mit Echtzeit, Abweichung vom Plan\n")
-    print("| Stadt | Betrieb(e) im Fahrplan | laufend | mit Echtzeit | Halte ≥ 30 s vom Plan |")
-    print("|---|---|---|---|---|")
+    print("| Stadt | Betrieb(e) im Fahrplan | laufend | mit Echtzeit | je Verkehrsmittel (mit Echtzeit/laufend) | Halte ≥ 30 s vom Plan |")
+    print("|---|---|---|---|---|---|")
     for c, _ in CITIES:
         names = sorted({agency_name[a] for a in city_agencies[c]})
         diffs = []
@@ -163,8 +182,9 @@ def main(rt_path: str, zips: list[str]) -> None:
                     diffs.append(ev.delay)
         dev = f"{100 * sum(abs(x) >= 30 for x in diffs) / len(diffs):.0f} % von {len(diffs)}" if diffs else "–"
         n = running[c]
-        print(f"| {c} | {', '.join(names)[:80] or 'nicht gefunden'} | {n} | {covered[c]} ({100 * covered[c] / n:.0f} %) | {dev} |" if n else
-              f"| {c} | {', '.join(names)[:80] or 'nicht gefunden'} | 0 | – | {dev} |")
+        per = " · ".join(f"{md} {covered[(c, md)]}/{running[(c, md)]}" for md in ("U-Bahn", "Tram", "Bus", "Bahn/sonst") if running[(c, md)])
+        cov = f"{covered[c]} ({100 * covered[c] / n:.0f} %)" if n else "–"
+        print(f"| {c} | {', '.join(names)[:90] or 'nicht gefunden'} | {n} | {cov} | {per or '–'} | {dev} |")
 
 
 if __name__ == "__main__":
