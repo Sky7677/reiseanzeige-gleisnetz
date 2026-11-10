@@ -166,8 +166,13 @@ def main(zip_path: str, rt_paths: list[str]) -> None:
     services = active_services(z, day)
     want = {tid: v for tid, v in trips.items() if v[1] in services}
     span: dict[str, list[int]] = {}
+    sched: dict[str, dict[int, int]] = collections.defaultdict(dict)
     for r in rows(z, "stop_times.txt"):
         tid = r["trip_id"]
+        if tid in rt_trips:
+            v = seconds(r.get("departure_time") or r.get("arrival_time"))
+            if v is not None:
+                sched[tid][int(r["stop_sequence"])] = v
         if tid not in want:
             continue
         a = seconds(r.get("arrival_time") or r.get("departure_time"))
@@ -190,6 +195,41 @@ def main(zip_path: str, rt_paths: list[str]) -> None:
             if tid in rt_trips:
                 covered[md] += 1
     print(f"\n## Abdeckung um {now:%H:%M} ({day:%d.%m.%Y}): laufende Fahrten laut Plan mit Echtzeit\n")
+    for k, v in running.most_common():
+        print(f"- {k}: {covered[k]} von {v} ({100 * covered[k] / v:.0f} %)")
+
+    # Echte Prognosen oder nur der Plan? Abweichung der Echtzeit vom Plan je Halt (U-Bahn, Tram, Bus)
+    midnight = datetime.combine(day, datetime.min.time(), TZ)
+    print("\n## Abweichung vom Plan an den noch kommenden Halten (Echtzeit minus Plan)\n")
+    for md in ("U-Bahn", "Tram", "Bus", "S-Bahn"):
+        diffs = []
+        lines_late = collections.Counter()
+        for e in m.entity:
+            if not e.HasField("trip_update"):
+                continue
+            tu = e.trip_update
+            t = trips.get(tu.trip.trip_id)
+            if not t or routes.get(t[0], ("", "", ""))[2] != md:
+                continue
+            plan = sched.get(tu.trip.trip_id)
+            if not plan:
+                continue
+            for su in tu.stop_time_update:
+                ev = su.departure if su.HasField("departure") else su.arrival
+                p_ = plan.get(su.stop_sequence)
+                if not ev.time or p_ is None or ev.time < m.header.timestamp:
+                    continue
+                diffs.append(ev.time - (midnight + timedelta(seconds=p_)).timestamp())
+                if ev.time - (midnight + timedelta(seconds=p_)).timestamp() >= 120:
+                    lines_late[routes[t[0]][1]] += 1
+        if diffs:
+            nz = sum(abs(d) >= 30 for d in diffs)
+            print(f"- {md}: {len(diffs)} Halte, davon {nz} mit mindestens 30 s Abweichung ({100 * nz / len(diffs):.0f} %), "
+                  f"Median {statistics.median(diffs):.0f} s, größte {max(diffs) / 60:.1f} min, kleinste {min(diffs) / 60:.1f} min; "
+                  f"ab 2 min später: {dict(lines_late.most_common(6))}")
+        else:
+            print(f"- {md}: keine vergleichbaren Halte")
+    return
     for k, v in running.most_common():
         print(f"- {k}: {covered[k]} von {v} ({100 * covered[k] / v:.0f} %)")
 
